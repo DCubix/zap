@@ -62,7 +62,7 @@ int main(int argc, char** argv) {
 		SDL_RenderClear(renderer);
 
 		for (int y = 0; y < 600; y+=32) {
-			for (int x = 0; x < 6800; x+=32) {
+			for (int x = 0; x < 800; x+=32) {
 				drawTile(renderer, tiles, 10, x, y, 10, 4);
 			}
 		}
