@@ -1,5 +1,8 @@
 #include <iostream>
 #include <cmath>
+#include <vector>
+#include <algorithm>
+#include <cstdint>
 
 #if __has_include("SDL2/SDL.h")
 #	include "SDL2/SDL.h"
@@ -7,25 +10,90 @@
 #	include "SDL.h"
 #endif
 
-void drawTile(
-	SDL_Renderer* renderer,
-	SDL_Texture* tex,
-	int index,
-	int x, int y,
-	int rows, int cols
-) {
-	//int w, h;
-	//SDL_QueryTexture(tex, nullptr, nullptr, &w, &h);
+#include "renderer.h"
 
-	const int tw = 32;
-	const int th = 32;
-	int tx = (index % cols) * tw;
-	int ty = (index / cols) * th;
+struct Tile {
+	enum Type {
+		None = 0,
+		Wire,
+		Connector,
+		PowerSupply,
+		LED,
+		AND,
+		OR,
+		Inverter,
+		Switch
+	};
 
-	SDL_Rect src = { tx, ty, tw, th };
-	SDL_Rect dst = { x, y, tw, th };
-	SDL_RenderCopy(renderer, tex, &src, &dst);
-}
+	Type type{ Type::None };
+	int orientation{ 0 };
+	bool state{ false };
+};
+
+class Map {
+public:
+	Map(int size = 100) {
+		m_size = size;
+		m_tiles.resize(size * size);
+		std::fill(m_tiles.begin(), m_tiles.end(), Tile{});
+	}
+
+	Tile* get(int x, int y) {
+		if (x < 0 || y < 0 || x >= m_size || y >= m_size) return nullptr;
+		return &m_tiles[x + y * m_size];
+	}
+
+	void drawLayer(Renderer& ren, SDL_Texture* tiles, Tile::Type type) {
+		if (type == Tile::None) return;
+		for (int y = 0; y < m_size; y++) {
+			for (int x = 0; x < m_size; x++) {
+				int ax = x * 32;
+				int ay = y * 32;
+				auto tile = get(x, y);
+				if (tile->type != type) continue;
+
+				switch (type) {
+					default: break;
+					case Tile::Wire: {
+						uint8_t flag = 0;
+						auto left = get(x - 1, y);
+						auto right = get(x + 1, y);
+						auto top = get(x, y - 1);
+						auto bottom = get(x, y + 1);
+
+						if (left != nullptr && left->type == Tile::Wire) flag |= 2;
+						if (right != nullptr && right->type == Tile::Wire) flag |= 4;
+						if (top != nullptr && top->type == Tile::Wire) flag |= 8;
+						if (bottom != nullptr && bottom->type == Tile::Wire) flag |= 16;
+
+						switch (flag) {
+							default: ren.tile(tiles, ax, ay, 32, 32,  0,  4, 10); break;
+							case 2:
+							case 4:
+							case 6: ren.tile(tiles, ax, ay, 32, 32,  1,  4, 10); break;
+							case 8:
+							case 16:
+							case 24: ren.tile(tiles, ax, ay, 32, 32,  0,  4, 10); break;
+							case 18: ren.tile(tiles, ax, ay, 32, 32,  2,  4, 10); break;
+							case 10: ren.tile(tiles, ax, ay, 32, 32,  3,  4, 10); break;
+							case 20: ren.tile(tiles, ax, ay, 32, 32,  4,  4, 10); break;
+							case 12: ren.tile(tiles, ax, ay, 32, 32,  5,  4, 10); break;
+							case 28: ren.tile(tiles, ax, ay, 32, 32,  32,  4, 10); break;
+							case 22: ren.tile(tiles, ax, ay, 32, 32,  33,  4, 10); break;
+							case 26: ren.tile(tiles, ax, ay, 32, 32,  34,  4, 10); break;
+							case 14: ren.tile(tiles, ax, ay, 32, 32,  35,  4, 10); break;
+							case 30: ren.tile(tiles, ax, ay, 32, 32,  36,  4, 10); break;
+						}
+					} break;
+				}
+			}
+		}
+	}
+
+private:
+	int m_size;
+	std::vector<Tile> m_tiles;
+};
 
 int main(int argc, char** argv) {
 	SDL_Init(SDL_INIT_VIDEO);
@@ -44,8 +112,17 @@ int main(int argc, char** argv) {
 	SDL_Texture* tiles = SDL_CreateTextureFromSurface(renderer, tilesSurf);
 	SDL_FreeSurface(tilesSurf);
 
+	int windowWidth = 0,
+		windowHeight = 0;
+	SDL_GetWindowSize(window, &windowWidth, &windowHeight);
+
+	const int mapSize = 100;
+	Map map{};
+
+	Renderer ren(renderer);
+
 	SDL_Event event;
-	bool running = true;
+	bool running = true, drag = false;
 	int mx = 0, my = 0;
 
 	while (running) {
@@ -55,19 +132,42 @@ int main(int argc, char** argv) {
 			if (event.type == SDL_MOUSEMOTION) {
 				mx = std::floor(event.motion.x / 32) * 32;
 				my = std::floor(event.motion.y / 32) * 32;
+				if (drag) {
+					auto tile = map.get(mx / 32, my /32);
+					if (tile != nullptr) {
+						tile->type = Tile::Wire;
+					}
+				}
+			}
+
+			if (event.type == SDL_MOUSEBUTTONDOWN) {
+				mx = std::floor(event.button.x / 32) * 32;
+				my = std::floor(event.button.y / 32) * 32;
+				auto tile = map.get(mx / 32, my /32);
+				if (tile != nullptr) {
+					tile->type = Tile::Wire;
+				}
+				drag = true;
+			} else if (event.type == SDL_MOUSEBUTTONUP) {
+				drag = false;
 			}
 		}
 
 		SDL_SetRenderDrawColor(renderer, 0, 50, 100, 255);
 		SDL_RenderClear(renderer);
 
-		for (int y = 0; y < 600; y+=32) {
-			for (int x = 0; x < 800; x+=32) {
-				drawTile(renderer, tiles, 10, x, y, 10, 4);
+		// BACKGROUND
+		for (int y = 0; y < mapSize; y++) {
+			for (int x = 0; x < mapSize; x++) {
+				ren.tile(tiles, x * 32, y * 32, 32, 32, 10, 4, 10);
 			}
 		}
-		drawTile(renderer, tiles, 11, mx, my, 10, 4);
 
+		map.drawLayer(ren, tiles, Tile::Wire);
+
+		ren.tile(tiles, mx, my, 32, 32, 11, 4, 10);
+
+		ren.render(windowWidth, windowHeight);
 		SDL_RenderPresent(renderer);
 	}
 
