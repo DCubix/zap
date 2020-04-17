@@ -56,25 +56,35 @@ public:
 					default: break;
 					case Tile::Wire: {
 						uint8_t flag = 0;
-						auto left = get(x - 1, y);
-						auto right = get(x + 1, y);
-						auto top = get(x, y - 1);
-						auto bottom = get(x, y + 1);
+						uint8_t cflag = 0;
 
-						if (left != nullptr && left->type == Tile::Wire) flag |= 2;
-						if (right != nullptr && right->type == Tile::Wire) flag |= 4;
-						if (top != nullptr && top->type == Tile::Wire) flag |= 8;
-						if (bottom != nullptr && bottom->type == Tile::Wire) flag |= 16;
+						auto left = get(x - 1, y); // 2
+						auto right = get(x + 1, y); // 4
+						auto top = get(x, y - 1); // 8
+						auto bottom = get(x, y + 1); // 16
+						auto sides = { left, right, top, bottom };
+
+						int i = 0;
+						for (auto t : sides) {
+							if (t == nullptr) {
+								i++;
+								continue;
+							}
+							flag |= (1 << (i+1));
+							i++;
+						}
 
 						switch (flag) {
 							default: ren.tile(tiles, ax, ay, 32, 32,  0,  4, 10); break;
-							case 2:
-							case 4:
+							case 2: ren.tile(tiles, ax, ay, 32, 32,  connector[0] ? 7 : 1,  4, 10); break;
+							case 4: ren.tile(tiles, ax, ay, 32, 32,  connector[1] ? 9 : 1,  4, 10); break;
 							case 6: ren.tile(tiles, ax, ay, 32, 32,  1,  4, 10); break;
-							case 8:
-							case 16:
+							case 8: ren.tile(tiles, ax, ay, 32, 32,  connector[2] ? 6 : 0,  4, 10); break;
+							case 16: ren.tile(tiles, ax, ay, 32, 32,  connector[3] ? 8 : 0,  4, 10); break;
 							case 24: ren.tile(tiles, ax, ay, 32, 32,  0,  4, 10); break;
-							case 18: ren.tile(tiles, ax, ay, 32, 32,  2,  4, 10); break;
+
+							case 18: ren.tile(tiles, ax, ay, 32, 32,  connector[0] ? 43,  4, 10); break;
+
 							case 10: ren.tile(tiles, ax, ay, 32, 32,  3,  4, 10); break;
 							case 20: ren.tile(tiles, ax, ay, 32, 32,  4,  4, 10); break;
 							case 12: ren.tile(tiles, ax, ay, 32, 32,  5,  4, 10); break;
