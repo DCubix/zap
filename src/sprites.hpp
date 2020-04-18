@@ -2,83 +2,83 @@
 #define SPRITES_HPP
 
 enum SpriteIndex {
-	SpriteWireV = 0,
-	SpriteWireH,
-	SpriteWireLB,
-	SpriteWireLT,
-	SpriteWireRB,
-	SpriteWireRT,
+	WireV = 0,
+	WireH,
+	WireLB,
+	WireLT,
+	WireRB,
+	WireRT,
 
-	SpriteWireTC,
-	SpriteWireRC,
-	SpriteWireBC,
-	SpriteWireLC,
+	Unused44,
+	Unused45,
+	Unused46,
+	Unused47,
 
 	Background,
 	Cursor,
 
-	SpriteWireRTB,
-	SpriteWireLRB,
-	SpriteWireLTB,
-	SpriteWireLRT,
+	WireRTB,
+	WireLRB,
+	WireLTB,
+	WireLRT,
 
-	SpriteWireLRTB,
-	SpriteWireLCRCTCBC,
+	WireLRTB,
 
 	Unused0,
 	Unused1,
-
-	SpriteWireTCR,
-	SpriteWireRCB,
-	SpriteWireBCL,
-	SpriteWireLCB,
-
-	SpriteWireTCL,
-	SpriteWireRCT,
-	SpriteWireBCR,
-	SpriteWireLCT,
-
-	SpriteWireTCRC,
-	SpriteWireTCLC,
-	SpriteWireLCBC,
-	SpriteWireBCRC,
-
-	SpriteWireRCTB,
-	SpriteWireLRBC,
-	SpriteWireLCTB,
-	SpriteWireLRTC,
-
-	SpriteWireRCTCB,
-	SpriteWireLRCBC,
-	SpriteWireLCTBC,
-	SpriteWireLCRTC,
-
-	SpriteWireRCTBC,
-	SpriteWireLCRBC,
-	SpriteWireLCTCB,
-	SpriteWireLRCTC,
-
-	SpriteWireRCTCBC,
-	SpriteWireLCRCBC,
-	SpriteWireLCTCBC,
-	SpriteWireLCRCTC,
-
-	SpriteWireLRCTB,
-	SpriteWireLRTBC,
-	SpriteWireLCRTB,
-	SpriteWireLRTCB,
-
-	SpriteWireLRCTBC,
-	SpriteWireLCRTBC,
-	SpriteWireLCRTCB,
-	SpriteWireLRCTCB,
-
-	SpriteWireLRCTCBC,
-	SpriteWireLCRCTBC,
-	SpriteWireLCRTCBC,
-	SpriteWireLCRCTCB,
-
 	Unused2,
+
+	ConnectorR,
+	ConnectorB,
+	ConnectorL,
+	ConnectorT,
+
+	WireVOn,
+	WireHOn,
+	WireLBOn,
+	WireLTOn,
+
+	WireRBOn,
+	WireRTOn,
+	Unused13,
+	Unused14,
+
+	WireRTBOn,
+	WireLRBOn,
+	WireLTBOn,
+	WireLRTOn,
+
+	WireLRTBOn,
+	Unused20,
+	Unused21,
+	Unused22,
+
+	Unused23,
+	Unused24,
+	Unused25,
+	Unused26,
+
+	Unused27,
+	Unused28,
+	UNused29,
+	Unused30,
+
+	Unused31,
+	Unused32,
+	Unused33,
+	Unused34,
+
+	Unused35,
+	Unused36,
+	Unused37,
+	Unused38,
+
+	Unused39,
+	Unused40,
+	Unused41,
+	Unused42,
+
+	Unused43,
 
 	Power,
 	LEDOff,

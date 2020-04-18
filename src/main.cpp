@@ -3,6 +3,8 @@
 #include <vector>
 #include <algorithm>
 #include <cstdint>
+#include <functional>
+#include <stack>
 
 #if __has_include("SDL2/SDL.h")
 #	include "SDL2/SDL.h"
@@ -11,6 +13,7 @@
 #endif
 
 #include "renderer.h"
+#include "sprites.hpp"
 
 struct Tile {
 	enum Type {
@@ -36,11 +39,106 @@ public:
 		m_size = size;
 		m_tiles.resize(size * size);
 		std::fill(m_tiles.begin(), m_tiles.end(), Tile{});
+
+		m_tempTiles.resize(size * size);
+		std::fill(m_tempTiles.begin(), m_tempTiles.end(), Tile{});
 	}
 
 	Tile* get(int x, int y) {
 		if (x < 0 || y < 0 || x >= m_size || y >= m_size) return nullptr;
 		return &m_tiles[x + y * m_size];
+	}
+
+	Tile* getTemp(int x, int y) {
+		if (x < 0 || y < 0 || x >= m_size || y >= m_size) return nullptr;
+		return &m_tempTiles[x + y * m_size];
+	}
+
+	void place(int x, int y, Tile::Type type, bool state = false) {
+		if (x < 0 || y < 0 || x >= m_size || y >= m_size) return;
+		const int i = x + y * m_size;
+		m_tiles[i].type = type;
+		m_tiles[i].state = state;
+		m_tempTiles[i].type = type;
+		m_tempTiles[i].state = state;
+	}
+
+	void setState(int x, int y, bool state) {
+		if (x < 0 || y < 0 || x >= m_size || y >= m_size) return;
+		const int i = x + y * m_size;
+		m_tempTiles[i].state = state;
+	}
+
+	Tile::Type has(int x, int y) {
+		auto tile = get(x, y);
+		if (tile == nullptr) return Tile::None;
+		return tile->type;
+	}
+
+	bool isOn(int x, int y) {
+		auto tile = get(x, y);
+		if (tile == nullptr) return false;
+		return tile->state;
+	}
+
+	void forEachNeighbor(int x, int y, const std::function<void(int, int)>& cb) {
+		int pos[8] = {
+			x - 1, y,
+			x + 1, y,
+			x, y - 1,
+			x, y + 1
+		};
+		for (int i = 0; i < 8; i+=2) {
+			cb(pos[i], pos[i + 1]);
+		}
+	}
+
+	void forEachTile(Tile::Type type, const std::function<bool(int, int)>& cb) {
+		bool loop = true;
+		for (int y = 0; y < m_size; y++) {
+			for (int x = 0; x < m_size; x++) {
+				auto ctile = get(x, y);
+				if (ctile->type == Tile::None) continue;
+				if (ctile->type != type) continue;
+				if (cb(x, y)) {
+					loop = false;
+					break;
+				}
+			}
+			if (!loop) break;
+		}
+	}
+
+	void simulationStep() {
+		forEachTile(Tile::PowerSupply, [&](int x, int y) {
+			setState(x, y, true);
+			return false;
+		});
+
+		forEachTile(Tile::Wire, [&](int x, int y) {
+			bool hasPower =
+				isOn(x - 1, y) ||
+				isOn(x + 1, y) ||
+				isOn(x, y - 1) ||
+				isOn(x, y + 1);
+
+			bool hasPowerSupply = false;
+			forEachTile(Tile::Wire, [&](int tx, int ty) {
+				hasPowerSupply =
+					has(tx - 1, ty) == Tile::PowerSupply ||
+					has(tx + 1, ty) == Tile::PowerSupply ||
+					has(tx, ty - 1) == Tile::PowerSupply ||
+					has(tx, ty + 1) == Tile::PowerSupply;
+
+				if (hasPowerSupply) return true;
+				return false;
+			});
+			
+			setState(x, y, hasPower && hasPowerSupply);
+			return false;
+		});
+
+		swap();
 	}
 
 	void drawLayer(Renderer& ren, SDL_Texture* tiles, Tile::Type type) {
@@ -49,51 +147,54 @@ public:
 			for (int x = 0; x < m_size; x++) {
 				int ax = x * 32;
 				int ay = y * 32;
-				auto tile = get(x, y);
-				if (tile->type != type) continue;
+				auto ctile = get(x, y);
+				if (ctile->type != type) continue;
 
 				switch (type) {
 					default: break;
+					case Tile::PowerSupply: {
+						ren.tile(tiles, ax, ay, 32, 32, Power, 4, 20);
+					} break;
 					case Tile::Wire: {
 						uint8_t flag = 0;
-						uint8_t cflag = 0;
 
-						auto left = get(x - 1, y); // 2
-						auto right = get(x + 1, y); // 4
-						auto top = get(x, y - 1); // 8
-						auto bottom = get(x, y + 1); // 16
-						auto sides = { left, right, top, bottom };
+						Tile::Type sides[4] = {
+							has(x - 1, y), // 2
+							has(x + 1, y), // 4
+							has(x, y - 1), // 8
+							has(x, y + 1)  // 16
+						};
 
-						int i = 0;
-						for (auto t : sides) {
-							if (t == nullptr) {
-								i++;
-								continue;
-							}
+						for (int i = 0; i < 4; i++) {
+							if (sides[i] == Tile::None) continue;
 							flag |= (1 << (i+1));
-							i++;
 						}
 
+						uint8_t tile = 0;
 						switch (flag) {
-							default: ren.tile(tiles, ax, ay, 32, 32,  0,  4, 10); break;
-							case 2: ren.tile(tiles, ax, ay, 32, 32,  connector[0] ? 7 : 1,  4, 10); break;
-							case 4: ren.tile(tiles, ax, ay, 32, 32,  connector[1] ? 9 : 1,  4, 10); break;
-							case 6: ren.tile(tiles, ax, ay, 32, 32,  1,  4, 10); break;
-							case 8: ren.tile(tiles, ax, ay, 32, 32,  connector[2] ? 6 : 0,  4, 10); break;
-							case 16: ren.tile(tiles, ax, ay, 32, 32,  connector[3] ? 8 : 0,  4, 10); break;
-							case 24: ren.tile(tiles, ax, ay, 32, 32,  0,  4, 10); break;
-
-							case 18: ren.tile(tiles, ax, ay, 32, 32,  connector[0] ? 43,  4, 10); break;
-
-							case 10: ren.tile(tiles, ax, ay, 32, 32,  3,  4, 10); break;
-							case 20: ren.tile(tiles, ax, ay, 32, 32,  4,  4, 10); break;
-							case 12: ren.tile(tiles, ax, ay, 32, 32,  5,  4, 10); break;
-							case 28: ren.tile(tiles, ax, ay, 32, 32,  32,  4, 10); break;
-							case 22: ren.tile(tiles, ax, ay, 32, 32,  33,  4, 10); break;
-							case 26: ren.tile(tiles, ax, ay, 32, 32,  34,  4, 10); break;
-							case 14: ren.tile(tiles, ax, ay, 32, 32,  35,  4, 10); break;
-							case 30: ren.tile(tiles, ax, ay, 32, 32,  36,  4, 10); break;
+							default: break;
+							case 2:
+							case 4:
+							case 6: tile = ctile->state ? WireHOn : WireH; break;
+							case 8:
+							case 16:
+							case 24: tile = ctile->state ? WireVOn : WireV; break;
+							case 18: tile = ctile->state ? WireLBOn : WireLB; break;
+							case 10: tile = ctile->state ? WireLTOn : WireLT; break;
+							case 20: tile = ctile->state ? WireRBOn : WireRB; break;
+							case 12: tile = ctile->state ? WireRTOn : WireRT; break;
+							case 28: tile = ctile->state ? WireRTBOn : WireRTB; break;
+							case 22: tile = ctile->state ? WireLRBOn : WireLRB; break;
+							case 26: tile = ctile->state ? WireLTBOn : WireLTB; break;
+							case 14: tile = ctile->state ? WireLRTOn : WireLRT; break;
+							case 30: tile = ctile->state ? WireLRTBOn : WireLRTB; break;
 						}
+						ren.tile(tiles, ax, ay, 32, 32, tile, 4, 20);
+
+						if (sides[0] != Tile::Wire && sides[0] != Tile::None) ren.tile(tiles, ax, ay, 32, 32, ConnectorL, 4, 20);
+						if (sides[1] != Tile::Wire && sides[1] != Tile::None) ren.tile(tiles, ax, ay, 32, 32, ConnectorR, 4, 20);
+						if (sides[2] != Tile::Wire && sides[2] != Tile::None) ren.tile(tiles, ax, ay, 32, 32, ConnectorT, 4, 20);
+						if (sides[3] != Tile::Wire && sides[3] != Tile::None) ren.tile(tiles, ax, ay, 32, 32, ConnectorB, 4, 20);
 					} break;
 				}
 			}
@@ -102,7 +203,14 @@ public:
 
 private:
 	int m_size;
-	std::vector<Tile> m_tiles;
+	std::vector<Tile> m_tiles, m_tempTiles;
+	std::stack<std::pair<int, int>> m_fillStack;
+
+	void swap() {
+		for (int i = 0; i < m_size * m_size; i++) {
+			std::swap(m_tiles[i], m_tempTiles[i]);
+		}
+	}
 };
 
 int main(int argc, char** argv) {
@@ -135,32 +243,52 @@ int main(int argc, char** argv) {
 	bool running = true, drag = false;
 	int mx = 0, my = 0;
 
+	Tile::Type type = Tile::Wire;
+
+	const double timeStep = 1.0 / 60.0;
+	double lastTime = double(SDL_GetTicks()) / 1000.0;
+	double accum = 0.0;
+
+	double tickTime = 0.0;
+
 	while (running) {
+		double current = double(SDL_GetTicks()) / 1000.0;
+		double delta = current - lastTime;
+		lastTime = current;
+		accum += delta;
+
 		while (SDL_PollEvent(&event)) {
 			if (event.type == SDL_QUIT) running = false;
+
+			if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_SPACE) {
+				type = type == Tile::Wire ? Tile::PowerSupply : Tile::Wire;
+			}
 
 			if (event.type == SDL_MOUSEMOTION) {
 				mx = std::floor(event.motion.x / 32) * 32;
 				my = std::floor(event.motion.y / 32) * 32;
 				if (drag) {
-					auto tile = map.get(mx / 32, my /32);
-					if (tile != nullptr) {
-						tile->type = Tile::Wire;
-					}
+					map.place(mx / 32, my /32, type);
 				}
 			}
 
 			if (event.type == SDL_MOUSEBUTTONDOWN) {
 				mx = std::floor(event.button.x / 32) * 32;
 				my = std::floor(event.button.y / 32) * 32;
-				auto tile = map.get(mx / 32, my /32);
-				if (tile != nullptr) {
-					tile->type = Tile::Wire;
-				}
+				map.place(mx / 32, my /32, type);
 				drag = true;
 			} else if (event.type == SDL_MOUSEBUTTONUP) {
 				drag = false;
 			}
+		}
+
+		while (accum >= timeStep) {
+			tickTime += timeStep;
+			if (tickTime >= 0.05) {
+				map.simulationStep();
+				tickTime = 0;
+			}
+			accum -= timeStep;
 		}
 
 		SDL_SetRenderDrawColor(renderer, 0, 50, 100, 255);
@@ -169,13 +297,14 @@ int main(int argc, char** argv) {
 		// BACKGROUND
 		for (int y = 0; y < mapSize; y++) {
 			for (int x = 0; x < mapSize; x++) {
-				ren.tile(tiles, x * 32, y * 32, 32, 32, 10, 4, 10);
+				ren.tile(tiles, x * 32, y * 32, 32, 32, Background, 4, 20);
 			}
 		}
 
 		map.drawLayer(ren, tiles, Tile::Wire);
+		map.drawLayer(ren, tiles, Tile::PowerSupply);
 
-		ren.tile(tiles, mx, my, 32, 32, 11, 4, 10);
+		ren.tile(tiles, mx, my, 32, 32, Cursor, 4, 20);
 
 		ren.render(windowWidth, windowHeight);
 		SDL_RenderPresent(renderer);
