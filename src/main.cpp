@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <functional>
 #include <stack>
+#include <bitset>
 
 #if __has_include("SDL2/SDL.h")
 #	include "SDL2/SDL.h"
@@ -30,7 +31,7 @@ struct Tile {
 
 	Type type{ Type::None };
 	int orientation{ 0 };
-	bool state{ false };
+	int state{ 0 };
 };
 
 class Map {
@@ -54,7 +55,7 @@ public:
 		return &m_tempTiles[x + y * m_size];
 	}
 
-	void place(int x, int y, Tile::Type type, bool state = false) {
+	void place(int x, int y, Tile::Type type, int state = 0) {
 		if (x < 0 || y < 0 || x >= m_size || y >= m_size) return;
 		const int i = x + y * m_size;
 		m_tiles[i].type = type;
@@ -63,22 +64,34 @@ public:
 		m_tempTiles[i].state = state;
 	}
 
-	void setState(int x, int y, bool state) {
+	void setNextState(int x, int y, int state) {
 		if (x < 0 || y < 0 || x >= m_size || y >= m_size) return;
 		const int i = x + y * m_size;
 		m_tempTiles[i].state = state;
+	}
+
+	void setCurrentState(int x, int y, int state) {
+		if (x < 0 || y < 0 || x >= m_size || y >= m_size) return;
+		const int i = x + y * m_size;
+		m_tiles[i].state = state;
+	}
+
+	int getNextState(int x, int y) {
+		if (x < 0 || y < 0 || x >= m_size || y >= m_size) return 0;
+		const int i = x + y * m_size;
+		return m_tempTiles[i].state;
+	}
+
+	int getCurrentState(int x, int y) {
+		if (x < 0 || y < 0 || x >= m_size || y >= m_size) return 0;
+		const int i = x + y * m_size;
+		return m_tiles[i].state;
 	}
 
 	Tile::Type has(int x, int y) {
 		auto tile = get(x, y);
 		if (tile == nullptr) return Tile::None;
 		return tile->type;
-	}
-
-	bool isOn(int x, int y) {
-		auto tile = get(x, y);
-		if (tile == nullptr) return false;
-		return tile->state;
 	}
 
 	void forEachNeighbor(int x, int y, const std::function<void(int, int)>& cb) {
@@ -94,50 +107,79 @@ public:
 	}
 
 	void forEachTile(Tile::Type type, const std::function<bool(int, int)>& cb) {
-		bool loop = true;
-		for (int y = 0; y < m_size; y++) {
-			for (int x = 0; x < m_size; x++) {
-				auto ctile = get(x, y);
-				if (ctile->type == Tile::None) continue;
-				if (ctile->type != type) continue;
-				if (cb(x, y)) {
-					loop = false;
-					break;
-				}
-			}
-			if (!loop) break;
+		for (int i = 0; i < m_size * m_size; i++) {
+			int x = i % m_size,
+				y = i / m_size;
+			auto ctile = get(x, y);
+			if (ctile->type != type) continue;
+			if (cb(x, y)) break;
 		}
 	}
 
 	void simulationStep() {
 		forEachTile(Tile::PowerSupply, [&](int x, int y) {
-			setState(x, y, true);
+			bool left   = has(x - 1, y) == Tile::None;
+			bool right  = has(x + 1, y) == Tile::None;
+			bool top    = has(x, y - 1) == Tile::None;
+			bool bottom = has(x, y + 1) == Tile::None;
+
+			uint8_t flag;
+			if (left) flag |= 0b1000;
+			if (right) flag |= 0b0100;
+			if (top) flag |= 0b0010;
+			if (bottom) flag |= 0b0001;
+
+			switch (flag) {
+				default: break;
+				case 0b1011: setNextState(x + 1, y, 1); break;
+				case 0b0111: setNextState(x - 1, y, 1); break;
+				case 0b1110: setNextState(x, y + 1, 1); break;
+				case 0b1101: setNextState(x, y - 1, 1); break;
+				case 0b1010: setNextState(x, y + 1, 1); setNextState(x + 1, y, 1); break;
+				case 0b0110: setNextState(x, y + 1, 1); setNextState(x - 1, y, 1); break;
+				case 0b0101: setNextState(x, y - 1, 1); setNextState(x - 1, y, 1); break;
+				case 0b1001: setNextState(x, y - 1, 1); setNextState(x + 1, y, 1); break;
+				case 0b1000: setNextState(x + 1, y, 1); setNextState(x, y - 1, 1); setNextState(x, y + 1, 1); break;
+				case 0b0100: setNextState(x - 1, y, 1); setNextState(x, y - 1, 1); setNextState(x, y + 1, 1); break;
+				case 0b0010: setNextState(x + 1, y, 1); setNextState(x - 1, y, 1); setNextState(x, y + 1, 1); break;
+				case 0b0001: setNextState(x + 1, y, 1); setNextState(x - 1, y, 1); setNextState(x, y - 1, 1); break;
+			}
+
 			return false;
 		});
 
 		forEachTile(Tile::Wire, [&](int x, int y) {
-			bool hasPower =
-				isOn(x - 1, y) ||
-				isOn(x + 1, y) ||
-				isOn(x, y - 1) ||
-				isOn(x, y + 1);
+			bool left   = has(x - 1, y) == Tile::None;
+			bool right  = has(x + 1, y) == Tile::None;
+			bool top    = has(x, y - 1) == Tile::None;
+			bool bottom = has(x, y + 1) == Tile::None;
 
-			bool hasPowerSupply = false;
-			forEachTile(Tile::Wire, [&](int tx, int ty) {
-				hasPowerSupply =
-					has(tx - 1, ty) == Tile::PowerSupply ||
-					has(tx + 1, ty) == Tile::PowerSupply ||
-					has(tx, ty - 1) == Tile::PowerSupply ||
-					has(tx, ty + 1) == Tile::PowerSupply;
+			uint8_t flag;
+			if (left) flag |= 0b1000;
+			if (right) flag |= 0b0100;
+			if (top) flag |= 0b0010;
+			if (bottom) flag |= 0b0001;
 
-				if (hasPowerSupply) return true;
-				return false;
-			});
-			
-			setState(x, y, hasPower && hasPowerSupply);
+			switch (flag) {
+				default: break;
+				case 0b1011: setNextState(x + 1, y, 1); break;
+				case 0b0111: setNextState(x - 1, y, 1); break;
+				case 0b1110: setNextState(x, y + 1, 1); break;
+				case 0b1101: setNextState(x, y - 1, 1); break;
+				case 0b1010: setNextState(x, y + 1, 1); setNextState(x + 1, y, 1); break;
+				case 0b0110: setNextState(x, y + 1, 1); setNextState(x - 1, y, 1); break;
+				case 0b0101: setNextState(x, y - 1, 1); setNextState(x - 1, y, 1); break;
+				case 0b1001: setNextState(x, y - 1, 1); setNextState(x + 1, y, 1); break;
+				case 0b1000: setNextState(x + 1, y, 1); setNextState(x, y - 1, 1); setNextState(x, y + 1, 1); break;
+				case 0b0100: setNextState(x - 1, y, 1); setNextState(x, y - 1, 1); setNextState(x, y + 1, 1); break;
+				case 0b0010: setNextState(x + 1, y, 1); setNextState(x - 1, y, 1); setNextState(x, y + 1, 1); break;
+				case 0b0001: setNextState(x + 1, y, 1); setNextState(x - 1, y, 1); setNextState(x, y - 1, 1); break;
+			}
+
+			return false;
 			return false;
 		});
-
+		
 		swap();
 	}
 
@@ -175,22 +217,22 @@ public:
 							default: break;
 							case 2:
 							case 4:
-							case 6: tile = ctile->state ? WireHOn : WireH; break;
+							case 6: tile = ctile->state>0 ? WireHOn : WireH; break;
 							case 8:
 							case 16:
-							case 24: tile = ctile->state ? WireVOn : WireV; break;
-							case 18: tile = ctile->state ? WireLBOn : WireLB; break;
-							case 10: tile = ctile->state ? WireLTOn : WireLT; break;
-							case 20: tile = ctile->state ? WireRBOn : WireRB; break;
-							case 12: tile = ctile->state ? WireRTOn : WireRT; break;
-							case 28: tile = ctile->state ? WireRTBOn : WireRTB; break;
-							case 22: tile = ctile->state ? WireLRBOn : WireLRB; break;
-							case 26: tile = ctile->state ? WireLTBOn : WireLTB; break;
-							case 14: tile = ctile->state ? WireLRTOn : WireLRT; break;
-							case 30: tile = ctile->state ? WireLRTBOn : WireLRTB; break;
+							case 24: tile = ctile->state>0 ? WireVOn : WireV; break;
+							case 18: tile = ctile->state>0 ? WireLBOn : WireLB; break;
+							case 10: tile = ctile->state>0 ? WireLTOn : WireLT; break;
+							case 20: tile = ctile->state>0 ? WireRBOn : WireRB; break;
+							case 12: tile = ctile->state>0 ? WireRTOn : WireRT; break;
+							case 28: tile = ctile->state>0 ? WireRTBOn : WireRTB; break;
+							case 22: tile = ctile->state>0 ? WireLRBOn : WireLRB; break;
+							case 26: tile = ctile->state>0 ? WireLTBOn : WireLTB; break;
+							case 14: tile = ctile->state>0 ? WireLRTOn : WireLRT; break;
+							case 30: tile = ctile->state>0 ? WireLRTBOn : WireLRTB; break;
 						}
 						ren.tile(tiles, ax, ay, 32, 32, tile, 4, 20);
-
+						
 						if (sides[0] != Tile::Wire && sides[0] != Tile::None) ren.tile(tiles, ax, ay, 32, 32, ConnectorL, 4, 20);
 						if (sides[1] != Tile::Wire && sides[1] != Tile::None) ren.tile(tiles, ax, ay, 32, 32, ConnectorR, 4, 20);
 						if (sides[2] != Tile::Wire && sides[2] != Tile::None) ren.tile(tiles, ax, ay, 32, 32, ConnectorT, 4, 20);
@@ -204,7 +246,6 @@ public:
 private:
 	int m_size;
 	std::vector<Tile> m_tiles, m_tempTiles;
-	std::stack<std::pair<int, int>> m_fillStack;
 
 	void swap() {
 		for (int i = 0; i < m_size * m_size; i++) {
@@ -229,6 +270,8 @@ int main(int argc, char** argv) {
 	SDL_SetColorKey(tilesSurf, 1, SDL_MapRGB(tilesSurf->format, 0, 255, 0));
 	SDL_Texture* tiles = SDL_CreateTextureFromSurface(renderer, tilesSurf);
 	SDL_FreeSurface(tilesSurf);
+
+	SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
 
 	int windowWidth = 0,
 		windowHeight = 0;
@@ -295,11 +338,11 @@ int main(int argc, char** argv) {
 		SDL_RenderClear(renderer);
 
 		// BACKGROUND
-		for (int y = 0; y < mapSize; y++) {
-			for (int x = 0; x < mapSize; x++) {
-				ren.tile(tiles, x * 32, y * 32, 32, 32, Background, 4, 20);
-			}
-		}
+		// for (int y = 0; y < mapSize; y++) {
+		// 	for (int x = 0; x < mapSize; x++) {
+		// 		ren.tile(tiles, x * 32, y * 32, 32, 32, Background, 4, 20);
+		// 	}
+		// }
 
 		map.drawLayer(ren, tiles, Tile::Wire);
 		map.drawLayer(ren, tiles, Tile::PowerSupply);

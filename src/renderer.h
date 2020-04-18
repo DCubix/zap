@@ -19,6 +19,8 @@ public:
 
 	void render(int screenWidth, int screenHeight);
 
+	SDL_Renderer* renderer() { return m_renderer; }
+
 private:
 	struct Sprite {
 		SDL_Texture* texture;
